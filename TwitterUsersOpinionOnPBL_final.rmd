@@ -1,0 +1,469 @@
+---
+title: "Twitter Users' Opinion on PBL"
+author: "Lili Wang"
+date: "5/7/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(rtweet)
+library(readr)
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(tidytext)
+library(ggplot2)
+library(tweenr)
+library(wordcloud2)
+library(dataedu)
+library(here)
+library(SnowballC)
+library(topicmodels)
+library(widyr)
+library(stringr)
+library(igraph)
+library(ggraph)
+library(forcats)
+library(stm)
+library(ldatuning)
+library(knitr)
+library(LDAvis)
+library(widyr)
+library(formattable)
+library(data.table)
+AFINN <- get_sentiments("afinn")
+
+pbl_tweets<-read_csv("c:/Users/Vicky/Documents/data/pbl_tweets_1.csv", 
+                     col_types = 
+                       cols(status_id=col_character(),user_id=               col_character())
+)
+
+pbl_tweets<-filter(pbl_tweets,lang=="en")
+pbl_text<-select(pbl_tweets,status_id,screen_name,user_id, source, created_at,text)
+pbl_data<-pbl_text
+tidy_words<-c("pbl","project","based","learning","t.co","https")
+tweets_tidy<-pbl_data %>%
+  unnest_tokens(output = word,input= text) %>%
+  anti_join(stop_words, by= "word") %>%
+  filter(!str_detect(word, "[:punct:]|[:digit:]"))%>%
+  filter(!grepl("pbl",word)) %>%
+  filter(!grepl("project", word)) %>%
+  filter(!grepl("amp", word)) %>%
+  filter(!grepl("project",word)) %>%
+  filter(!grepl("learning",word)) %>%
+  filter(!grepl("https",word)) %>%
+  filter(!grepl("t.co",word)) %>%
+  filter(!grepl("based",word))
+```
+
+# Study Introduction
+
+## Background
+This research was driven by my past working experience and research interest in using PBL to substantiate deep learning. According to one project I have participated in, though teachers’ attitude toward PBL was mostly positive, some complained that PBL sometimes “looks messy and not productive.” This finding made me wonder how others, particularly teachers/educators/researchers, think about PBL. Twitter, in this case,  provides a perfect platform to collect a larger quantities of data in a natural way (with little to nil social desirability bias), which cannot be accomplished by traditional research methodologies, such as surveys or interviews.
+
+## Research Purpose and Questions
+This study intends to depict a brief image of people's general opinion toward project based learning (PBL). This research is therefore driven by the following questions:
+
+1. What do people say about project-based learning (PBL) on Twitter?
+2. What key topics do people talk about PBL on Twitter?
+3. In general, what do Twitter users feel about PBL?
+4. What are the relationships between words (bigram) of the PBL tweets?
+ 
+## Methods
+
+**Data Source**: With the keywords “PBL,” “project based learning,” and “project based inquiry” (case sensitive) with hashtag (#), I used the Twitter API to “listen to and analyze” (Twitter API) public conversations relevant to project based learning and try to grasp a picture out of it. 
+
+I selected 5 (status_id, user_id, text, screen_name, source, created_at) out of 91 variables to conduct the intended analysis. Due to the limited memory of my laptop, the number of tweets was reduced to 200 to run topic modeling analysis.
+
+**Data Processing**: Tokenized, stemming, tidied text, document-term matrix.
+
+**Data Analysis**: Word counts, tf-idf, document-topic probabilities, structural topic model (STM), Latent Dirichlet allocation (beta), and correlation (phi-coefficient).
+
+## 
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pbl_rq<-read_xlsx("c:/Users/Vicky/Documents/data/pbl_rq.xlsx")
+formattable(pbl_rq, align =c("l","l","l"))
+```
+
+## Targeted Audiences
+
+Since PBL is a student-centered pedagogy which emphasizes on viewing students as learning agency and giving choice and voice to students through authentic projects, **educational stakeholders** such as teachers, school administrators, parents, educators, educational researchers, policy makers, and even students are natural audiences. 
+
+Considering this research only reports preliminary findings, interested readers are encouraged to further read research papers, books, or do research studies to dive deeper in this topic. They may otherwise find it interesting to compare and contrast what the authorities and the public say about PBL.  
+
+# Findings
+
+## Words Used to Describe PBL by Word Count
+```{r warning=FALSE, include=FALSE}
+wordcloud_count<-tweets_tidy %>%
+  count(word,sort=T) %>%
+  filter(n>=15) 
+```
+```{r}
+wordcloud2(wordcloud_count)
+```
+
+## Words Used to Describe PBL by tf-idf
+```{r message=FALSE, warning=FALSE, include=FALSE}
+count_tf_idf<-tweets_tidy %>%
+  select(status_id,word) %>%
+  group_by(status_id) %>%
+  count (word, sort=TRUE) %>%
+  mutate(total=sum(n),frequency=n/sum(n)) %>%
+  bind_tf_idf(word,status_id, n) %>%
+  arrange(desc(tf_idf))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+count_tf_idf %>% 
+  filter(tf_idf>1.0) %>%
+  mutate(word = reorder(word, tf_idf)) %>%
+  ggplot(aes(tf_idf,  fct_reorder(word, tf_idf), fill = status_id)) +
+  geom_col(show.legend = FALSE) +
+  labs(title="Top Words Twitter Users Mentioned Related to PBL by tf-idf",
+       x = "tf-idf", y = NULL)
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+tweets_quotes <- pbl_data %>%
+  filter(grepl("check|post|connecting", text)) %>%
+  sample_n(10)
+```
+## What Did People Say About PBL on Twitter with the Top Words 'check,' 'connecting,' and 'post?'
+
+"Teachers! If you are keen to incorporate project-based learning into your #STEM lessons, but don't know where to start, #CREST has some fantastic resources for you!Why not **check** out our secondary starter guide here."
+
+"Yes, let's integrate news into the day on a regular base. Also, **connecting** to experts as often as possible."
+
+"Retweet this **post** and tell me why you want a copy of the book Project-Based Learning. I will select a winner and ship a copy out. Thanks."
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+tweets_dtm <- tweets_tidy %>%
+  count(user_id, word) %>%
+  cast_dtm(user_id, word, n)
+temp <- textProcessor(pbl_data$text,
+                      metadata = pbl_data,
+                      lowercase=TRUE,
+                      removestopwords=TRUE,
+                      removenumbers=TRUE,
+                      removepunctuation=TRUE,
+                      wordLengths=c(3,Inf),
+                      stem=TRUE,
+                      onlycharacter= FALSE,
+                      striphtml=TRUE,
+                      customstopwords=NULL)
+meta<-temp$meta
+vocab<-temp$vocab
+docs<-temp$documents
+stemmed_tweets <- pbl_data %>%
+  unnest_tokens(output = word, input = text) %>%
+  anti_join(stop_words, by = "word") %>%
+  mutate(stem = wordStem(word))
+n_distinct(pbl_data$source)
+k_metrics <- FindTopicsNumber(
+  tweets_dtm,
+  topics = seq(10, 75, by = 5),
+  metrics = "Griffiths2004",
+  method = "Gibbs",
+  control = list(),
+  mc.cores = NA,
+  return_models = FALSE,
+  verbose = FALSE,
+  libpath = NULL)
+```
+
+## Top 5 Terms in Each STM Topic
+```{r, message=FALSE, warning=FALSE}
+tweets_lda <- LDA(tweets_dtm,
+                  k = 14,
+                  control = list(seed = 588))
+tweets_stm <- stm(documents=docs,
+                  data=meta,
+                  vocab=vocab, 
+                  prevalence =~ user_id + status_id,
+                  K=14,
+                  max.em.its=5,
+                  verbose = FALSE)
+```
+```{r}
+plot.STM(tweets_stm,n=5)
+```
+
+## Interactive Graph of Intertopic Distance Map and It's 30 Most Salient Terms
+```{r message=FALSE, warning=FALSE, include=FALSE}
+toLDAvis(mod = tweets_stm, docs = docs)
+terms(tweets_lda, 5)
+tidy_lda <- tidy(tweets_lda)
+top_terms <- tidy_lda %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 5, with_ties = FALSE) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+```
+**Play with it Here: ** http://localhost:13267/session/file6c3c4d04a73/index.html
+
+## Top 5 Terms in Each LDA Topic
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  group_by(topic, term) %>%
+  arrange(desc(beta)) %>%
+  ungroup() %>%
+  ggplot(aes(beta, term, fill = as.factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  scale_y_reordered() +
+  labs(x = expression(beta), y = NULL) +
+  facet_wrap(~ topic, ncol = 4, scales = "free")
+```
+
+## Users' Overall Sentiment toward PBL
+```{r message=FALSE, warning=FALSE, include=FALSE}
+sentiment_afinn<-inner_join(tweets_tidy,AFINN,by="word")
+senti_count<-sentiment_afinn %>%
+  group_by(word) %>%
+  count(word,sort=T)%>%
+  inner_join(AFINN,by="word")%>%
+  mutate(contribution=n*value) 
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+senti_count %>%
+  filter(abs(contribution)>4) %>%
+  slice_max(abs(contribution), n = 15) %>%
+  mutate(word = reorder(word, contribution)) %>%
+  ggplot(aes(contribution, fct_reorder(word, contribution), fill = contribution > 0)) +
+  geom_col(show.legend = FALSE) +
+  labs(y = NULL)
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+senti_quotes<-pbl_data %>%
+  select(text) %>%
+  filter(grepl('fun|love|rigorous',text))
+sample_n(senti_quotes,10)
+```
+
+## What Were Twitter Users Mostly Positive about on PBL?
+
+"Do your students ever ask you: 'When am I ever going to need this?' If they do, consider **rigorous** #PBL units in middle and high school math as your answer to that age-old student question."
+
+"I'd like to listen, I truly believe we need project based learning, maker cultures and circular/civic economics at the earliest age, through **fun** and play. Not for 'jobs' market reasons, but to normalise fun/creativity/context/purpose as everyday not 'special' or siloed."
+
+"LoveLD - **love** this myth-busting post about Project Based Learning."
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+neg_quotes<-pbl_data %>%
+  select(text) %>%
+  filter(grepl('sucks|fake|catastrophe',text))
+sample_n(senti_quotes,10)
+```
+
+## What did users mean by 'sucks,' 'fake,' and 'catastrophe?'
+
+"Exactly! That budget would fund maybe 350 schools to engage local digital film companies to produce their own consent ads.. project based learning, content and stimluate local arts!Fkkrs. #milkshakevideo **sucks**."
+
+"Wildcatters combined two preexisting technologies to revolutionize the global energy. Delightfully this reduced coal use and dependence on corrupt regimes. Will we see a revolutionary combo to help K-12 recover from the COVID **catastrophe**?"
+
+"I would argue that **fake** news is not any more prevalent than in the 'olden days,' it just distributes faster and I feel like people are less discerning in their critical analysis."
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+pbl_bigrams <- pbl_data %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+negation_words <- c("not", "no", "never", "without","rarely", "hardly")
+bigrams_separated <- pbl_bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ")
+bigrams_filtered <- bigrams_separated %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word) %>%
+  filter(!str_detect(word1, "[:punct:]|[:digit:]"))%>%
+  filter(!grepl("pbl",word1)) %>%
+  filter(!grepl("project", word1)) %>%
+  filter(!grepl("amp", word1)) %>%
+  filter(!grepl("project",word1)) %>%
+  filter(!grepl("learning",word1)) %>%
+  filter(!grepl("https",word1)) %>%
+  filter(!grepl("t.co",word1)) %>%
+  filter(!grepl("based",word1)) %>%
+  filter(!str_detect(word2, "[:punct:]|[:digit:]"))%>%
+  filter(!grepl("pbl",word2)) %>%
+  filter(!grepl("project", word2)) %>%
+  filter(!grepl("amp", word2)) %>%
+  filter(!grepl("project",word2)) %>%
+  filter(!grepl("learning",word2)) %>%
+  filter(!grepl("https",word2)) %>%
+  filter(!grepl("t.co",word2)) %>%
+  filter(!grepl("based",word2))
+
+bigram_counts <- bigrams_filtered %>%
+  count(word1, word2, sort = TRUE)
+bigrams_united <- bigrams_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+bigram_tf_idf <- bigrams_united %>%
+  count(source, bigram) %>%
+  bind_tf_idf(bigram, source, n) %>%
+  arrange(desc(tf_idf))
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+bigram_tf_idf %>% 
+  filter(tf_idf>.8) %>%
+  mutate(word = reorder(bigram, tf_idf)) %>%
+  ggplot(aes(tf_idf,fct_reorder(bigram, tf_idf), fill = source)) +
+  geom_col(show.legend = FALSE) +
+  labs(title="Top Bigram Words Twitter Users Mentioned Related to PBL",
+       x = "tf-idf", y = NULL)
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+negated_words <- bigrams_separated %>%
+  filter(word1 %in% negation_words) %>%
+  inner_join(AFINN, by = c(word2 = "word")) %>%
+  count(word1, word2, value, sort = TRUE)
+```
+
+```{r eval=FALSE, include=FALSE}
+pbl_trigrams <- pbl_data %>%
+  unnest_tokens(trigram, text, token = "ngrams", n = 3) %>%
+  separate(trigram, c("word1", "word2", "word3"), sep = " ") %>%
+  filter(!word1 %in% stop_words$word,
+         !word2 %in% stop_words$word,
+         !word3 %in% stop_words$word) %>%
+  count(word1, word2, word3, sort = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+negated_words %>%
+  mutate(contribution = n * value) %>%
+  arrange(desc(abs(contribution))) %>%
+  mutate(word2 = reorder(word2, contribution)) %>%
+  ggplot(aes(n * value, word2, fill = n * value > 0)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = "Sentiment value * number of occurrences",
+       y = "Words preceded by \"negated words\"")
+```
+
+## Negated Bigrams 
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+formattable(negated_words, 
+            align =c("l","l","c","l"), 
+            list(`word1` = formatter(
+              "span", style = ~ style(color = "#FF9999",font.weight = "bold")) 
+            ))
+```
+
+> Among a group of negative words "no, not, none, never, hardly, rarely," only "no, not" were found in our dataset. Considering the total contribution of negated bigrams was 7, plus "no matter" is a rather neutral expression, the double negated effect and negated bigrams that need to be carefully examined in terms of sentiment analysis (Grimmer & Stewart, 2013) contributed an ignorable part to the overall sentiment value.  
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+bigram_graph <- bigram_counts %>%
+  filter(n > 5) %>%
+  graph_from_data_frame()
+```
+
+## Common Bigrams Related to PBL on Twitter 
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+set.seed(2020)
+a <- grid::arrow(type = "closed", length = unit(.12, "inches"))
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+pbl_section_words <- pbl_data %>%
+  mutate(section = row_number() %/% 10) %>%
+  filter(section > 0) %>%
+  unnest_tokens(word, text) %>%
+  filter(!word %in% stop_words$word) %>%
+  filter(!str_detect(word, "[:punct:]|[:digit:]"))%>%
+  filter(!grepl("pbl",word)) %>%
+  filter(!grepl("project", word)) %>%
+  filter(!grepl("amp", word)) %>%
+  filter(!grepl("project",word)) %>%
+  filter(!grepl("learning",word)) %>%
+  filter(!grepl("https",word)) %>%
+  filter(!grepl("t.co",word)) %>%
+  filter(!grepl("based",word))
+word_pairs <- pbl_section_words %>%
+  pairwise_count(word, section, sort = TRUE)
+word_pairs %>%
+  filter(item1 == "education")
+word_cors <- pbl_section_words %>%
+  group_by(word) %>%
+  filter(n() >= 5) %>%
+  pairwise_cor(word, section, sort = TRUE)
+```
+
+## Words that Were Most Correlated with ‘environmental,’ ‘exploring,’ ‘math,’ 'question,' 'resources,' and ‘science’
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+word_cors %>%
+  filter(item1 %in% c("environmental", "exploring", "math", "question","science","resources")) %>%
+  group_by(item1) %>%
+  slice_max(correlation, n = 6) %>%
+  ungroup() %>%
+  mutate(item2 = reorder(item2, correlation)) %>%
+  ggplot(aes(item2, correlation)) +
+  geom_bar(stat = "identity",fill="#00AEBE") +
+  facet_wrap(~ item1, scales = "free") +
+  coord_flip()
+```
+
+## Pairs of Words that Show at Least a 0.6 Correlation of Appearing
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+set.seed(2016)
+word_cors %>%
+  filter(correlation > .6) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = correlation), show.legend = FALSE) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void()
+```
+
+# Conclusion and Discussions
+
+## Conclusion 
+* Q1: What do people say about project-based learning (PBL) on Twitter?
+  + People are using Twitter to share resources and call on participation related to PBL. 
+
+* Q2: What key topics do people talk about PBL on Twitter? 
+  +  Topic 1: **What PBL is about and can bring about** Project-based learning is a pedagogy endeavors to cultivating deep learning through projects. Terms such as "question," "opportunities," "share," and "inquiry" in Topics 1, 2, 9 in LDA modeling and "curriculum" in Topics 3, 4, 6 in stm modeling are in correspondence with core elements of PBL.  
+  
+  +  Topic 2: **In what domains PBL is deployed** Topics 5, 7, 8 in LDA modeling and topics 1, 9 in stm lay out the domains covering linguistic, science, math, etc. However, STEM education (science, technology, engineering, and mathematics) seem to be predominant compared to other subject matters. topics 1, 9 in stm/gamma
+
+  + Topic 3: **Who is involved in PBL** It is suggested that a wide range of parties are involved in the talk of PBL. Particularly, topic 10 in LDA modeling and Topics 2 & 13 in stm modeling showed that schools, tech organizations, and educational consulting corporations are all involved. It is worth noticing that PBL conversations on Twitter are mostly in the arena of k-12 education.
+
+* Q3: In general, what do Twitter users feel about PBL?
+  + Generally speaking, most people on Twitter are feeling positive about PBL, believing PBL can bring 'rigor' and 'fun' in learning.
+  
+* Q4: What are the relationships between words (bigram) of PBL tweets?
+
+  + 'adminchat,' 'cpchat,''mathchat,''suptchat,' 'elemchat' seem to be active on Twitter to involve most of the PBL discussion about professional development and support. 
+  
+  + PBL seem to be engaged with the topic of "inequity," for instance, students of AP classes who are from low-income families.
+  
+## Discussion
+* Limitations
+  + Due to the limited memory of the author's laptop, the data frame of this study is rather small (n=200), and therefore might not catch some features of people's opinion about PBL on Twitter.
+  
+  + The findings only depict a brief picture of the phenomenon, further studies are needed to grasp deeper information out of it. 
+  
+* Next Steps for Analysis
+  + Further studies using survey and interview engaging different participant subjects (e.g., teachers, students, coaches, administrators, principals, parents, etc) are particularly needed to expand our understanding of public opinions toward PBL (Cela, Sicilia, &Sánchez, 2015; He, 2012).
+  
+  + It is also interesting to do research comparing and contrasting the public (on social media) and academia's views on PBL.
+  
+![The Need for a High Quality PBL Framework](c:/Users/Vicky/Documents/data/pbl.png){width=80%}
+
+## References
+Cela, K.L., Sicilia, M.Á. & Sánchez, S. (2015). Social Network Analysis in E-Learning Environments: A Preliminary Systematic Review. *Educ Psychol Rev 27,* 219–246. https://doi.org/10.1007/s10648-014-9276-0
+
+Grimmer, J., & Stewart, B. (2013). Text as Data: The Promise and Pitfalls of Automatic Content Analysis Methods for Political Texts. *Political Analysis, 21(3),* 267-297. doi:10.1093/pan/mps028
+
+He, W. (2012). Examining students’ online interaction in a live video streaming environment using data mining and text mining. *Computers in Human Behavior, 29(1),* 90-102. https://doi.org/10.1016/j.chb.2012.07.020
