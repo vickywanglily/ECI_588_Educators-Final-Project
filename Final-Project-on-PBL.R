@@ -1,5 +1,3 @@
-install.packages("formattable")
-install.packages("data.table")
 library(writexl)
 library(rtweet)
 library(readr)
@@ -35,6 +33,9 @@ pbl_tweets<-read_csv("c:/Users/Vicky/Documents/data/pbl_tweets_1.csv",
                      col_types = 
                        cols(status_id=col_character(),user_id=               col_character())
 )
+
+pbl_rq<-read_xlsx("c:/Users/Vicky/Documents/data/pbl_rq.xlsx")
+formattable(pbl_rq, align =c("l","l","l"))
 
 pbl_tweets<-filter(pbl_tweets,lang=="en")
 pbl_text<-select(pbl_tweets,status_id,screen_name,user_id, source, created_at,text)
@@ -202,7 +203,7 @@ sample_n(senti_quotes,10)
 pbl_bigrams <- pbl_data %>%
   unnest_tokens(bigram, text, token = "ngrams", n = 2)
 
-negation_words <- c("not", "no", "never", "without")
+negation_words <- c("not", "no", "never", "without","hardly", "rarely")
 
 bigrams_separated <- pbl_bigrams %>%
   separate(bigram, c("word1", "word2"), sep = " ")
@@ -286,8 +287,9 @@ formattable(negated_words)
 formattable(negated_words, 
             align =c("l","l","c","l"), 
             list(`word1` = formatter(
-              "span", style = ~ style(color = "grey",font.weight = "bold")) 
-            ))
+              "span", style = ~ style(color = "#FF9999",
+                                      font.weight = "bold")
+            ) 
 
 bigram_graph <- bigram_counts %>%
   filter(n > 5) %>%
@@ -340,7 +342,7 @@ word_cors %>%
   ungroup() %>%
   mutate(item2 = reorder(item2, correlation)) %>%
   ggplot(aes(item2, correlation)) +
-  geom_bar(stat = "identity") +
+  geom_bar(stat = "identity",fill="#00AEBE") +
   facet_wrap(~ item1, scales = "free") +
   coord_flip()
 
@@ -353,3 +355,5 @@ word_cors %>%
   geom_node_point(color = "lightblue", size = 5) +
   geom_node_text(aes(label = name), repel = TRUE) +
   theme_void()
+                 
+  ![The Need for a High Quality PBL Framework](c:/Users/Vicky/Documents/data/pbl.png){width=80%}
